@@ -171,7 +171,7 @@ PlayerSettings:
   androidMinAspectRatio: 1
   applicationIdentifier:
     Android: com.MRCH.MRCHTemplate
-    Standalone: com.Mixed-Reality-and-Cultural-Heritage.MRCH-Example
+    Standalone: com.MRCH.MRCH-Template
     iPhone: com.MRCH.MRCH-Template
   buildNumber:
     Standalone: 0
