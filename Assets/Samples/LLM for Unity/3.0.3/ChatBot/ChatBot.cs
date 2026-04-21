@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine.UI;
@@ -34,6 +35,7 @@ namespace LLMUnitySamples
         void Start()
         {
             if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
             playerUI = new BubbleUI
             {
                 sprite = sprite,
@@ -48,22 +50,111 @@ namespace LLMUnitySamples
                 bubbleWidth = bubbleWidth,
                 bubbleHeight = -1
             };
+
             aiUI = playerUI;
             aiUI.bubbleColor = aiColor;
             aiUI.leftPosition = 1;
 
             inputBubble = new InputBubble(chatContainer, playerUI, "InputBubble", "Loading...", 4);
-            inputBubble.AddSubmitListener(OnInputFieldSubmit);
+
+            // ❌ IMPORTANT: disable Unity submit (prevents double trigger)
+            // inputBubble.AddSubmitListener(OnInputFieldSubmit);
+
             inputBubble.AddValueChangedListener(OnValueChanged);
             inputBubble.setInteractable(false);
+
             stopButton.gameObject.SetActive(true);
+
             ShowLoadedMessages();
             _ = llmAgent.Warmup(WarmUpCallback);
         }
 
+        void Update()
+        {
+#if ENABLE_INPUT_SYSTEM
+            bool enterPressed = Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame;
+#else
+            bool enterPressed = Input.GetKeyDown(KeyCode.Return);
+#endif
+
+            // 🔍 Debug logs
+            if (enterPressed)
+            {
+                Debug.Log("ENTER PRESSED");
+                Debug.Log("Input focused: " + inputBubble.inputFocused());
+                Debug.Log("blockInput: " + blockInput);
+                Debug.Log("warmUpDone: " + warmUpDone);
+                Debug.Log("Current text: [" + inputBubble.GetText() + "]");
+            }
+
+            // ✅ SEND MESSAGE ON ENTER
+            if (enterPressed)
+            {
+                if (!blockInput && warmUpDone)
+                {
+                    Debug.Log("SENDING MESSAGE...");
+                    OnInputFieldSubmit(inputBubble.GetText());
+                }
+                else
+                {
+                    Debug.Log("BLOCKED: blockInput or warmUp not ready");
+                }
+            }
+
+            // keep focus
+            if (!inputBubble.inputFocused() && warmUpDone)
+            {
+                inputBubble.ActivateInputField();
+                StartCoroutine(BlockInteraction());
+            }
+
+            // cleanup old bubbles
+            if (lastBubbleOutsideFOV != -1)
+            {
+                for (int i = 0; i <= lastBubbleOutsideFOV; i++)
+                {
+                    chatBubbles[i].Destroy();
+                }
+                chatBubbles.RemoveRange(0, lastBubbleOutsideFOV + 1);
+                lastBubbleOutsideFOV = -1;
+            }
+        }
+
+        void OnInputFieldSubmit(string newText)
+        {
+            Debug.Log("OnInputFieldSubmit CALLED with: [" + newText + "]");
+
+            inputBubble.ActivateInputField();
+
+            if (blockInput || newText.Trim() == "")
+            {
+                Debug.Log("Submit BLOCKED inside function");
+                StartCoroutine(BlockInteraction());
+                return;
+            }
+
+            Debug.Log("Submit PASSED, sending to LLM");
+
+            blockInput = true;
+
+            // remove unwanted newline
+            string message = inputBubble.GetText().Replace("\n", "").Replace("\v", "\n");
+
+            AddBubble(message, true);
+            Bubble aiBubble = AddBubble("...", false);
+
+            Task chatTask = llmAgent.Chat(message, aiBubble.SetText, AllowInput);
+
+            inputBubble.SetText("");
+        }
+
         Bubble AddBubble(string message, bool isPlayerMessage)
         {
-            Bubble bubble = new Bubble(chatContainer, isPlayerMessage ? playerUI : aiUI, isPlayerMessage ? "PlayerBubble" : "AIBubble", message);
+            Bubble bubble = new Bubble(chatContainer,
+                isPlayerMessage ? playerUI : aiUI,
+                isPlayerMessage ? "PlayerBubble" : "AIBubble",
+                message);
+
             chatBubbles.Add(bubble);
             bubble.OnResize(UpdateBubblePositions);
             return bubble;
@@ -71,32 +162,8 @@ namespace LLMUnitySamples
 
         void ShowLoadedMessages()
         {
-            for (int i = 1; i < llmAgent.chat.Count; i++) AddBubble(llmAgent.chat[i].content, i % 2 == 1);
-        }
-
-        void OnInputFieldSubmit(string newText)
-        {
-            inputBubble.ActivateInputField();
-#if ENABLE_INPUT_SYSTEM
-            // new input system for latest Unity version
-            bool shiftHeld = Keyboard.current != null && (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed);
-#else
-            // old input system
-            bool shiftHeld = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-#endif
-            if (blockInput || newText.Trim() == "" || shiftHeld)
-            {
-                StartCoroutine(BlockInteraction());
-                return;
-            }
-            blockInput = true;
-            // replace vertical_tab
-            string message = inputBubble.GetText().Replace("\v", "\n");
-
-            AddBubble(message, true);
-            Bubble aiBubble = AddBubble("...", false);
-            Task chatTask = llmAgent.Chat(message, aiBubble.SetText, AllowInput);
-            inputBubble.SetText("");
+            for (int i = 1; i < llmAgent.chat.Count; i++)
+                AddBubble(llmAgent.chat[i].content, i % 2 == 1);
         }
 
         public void WarmUpCallback()
@@ -118,26 +185,22 @@ namespace LLMUnitySamples
             AllowInput();
         }
 
-        IEnumerator<string> BlockInteraction()
+        IEnumerator BlockInteraction()
         {
-            // prevent from change until next frame
             inputBubble.setInteractable(false);
             yield return null;
             inputBubble.setInteractable(true);
-            // change the caret position to the end of the text
             inputBubble.MoveTextEnd();
         }
 
         void OnValueChanged(string newText)
         {
-            // Remove newline added by Enter
 #if ENABLE_INPUT_SYSTEM
-            // new input system for latest Unity version
             bool enterPressed = Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame;
 #else
-            // old input system
             bool enterPressed = Input.GetKey(KeyCode.Return);
 #endif
+
             if (enterPressed)
             {
                 if (inputBubble.GetText().Trim() == "")
@@ -149,37 +212,20 @@ namespace LLMUnitySamples
         {
             float y = inputBubble.GetSize().y + inputBubble.GetRectTransform().offsetMin.y + bubbleSpacing;
             float containerHeight = chatContainer.GetComponent<RectTransform>().rect.height;
+
             for (int i = chatBubbles.Count - 1; i >= 0; i--)
             {
                 Bubble bubble = chatBubbles[i];
                 RectTransform childRect = bubble.GetRectTransform();
+
                 childRect.anchoredPosition = new Vector2(childRect.anchoredPosition.x, y);
 
-                // last bubble outside the container
                 if (y > containerHeight && lastBubbleOutsideFOV == -1)
                 {
                     lastBubbleOutsideFOV = i;
                 }
-                y += bubble.GetSize().y + bubbleSpacing;
-            }
-        }
 
-        void Update()
-        {
-            if (!inputBubble.inputFocused() && warmUpDone)
-            {
-                inputBubble.ActivateInputField();
-                StartCoroutine(BlockInteraction());
-            }
-            if (lastBubbleOutsideFOV != -1)
-            {
-                // destroy bubbles outside the container
-                for (int i = 0; i <= lastBubbleOutsideFOV; i++)
-                {
-                    chatBubbles[i].Destroy();
-                }
-                chatBubbles.RemoveRange(0, lastBubbleOutsideFOV + 1);
-                lastBubbleOutsideFOV = -1;
+                y += bubble.GetSize().y + bubbleSpacing;
             }
         }
 
@@ -190,6 +236,7 @@ namespace LLMUnitySamples
         }
 
         bool onValidateWarning = true;
+
         void OnValidate()
         {
             if (onValidateWarning && !llmAgent.remote && llmAgent.llm != null && llmAgent.llm.model == "")

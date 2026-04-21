@@ -61,6 +61,7 @@ namespace LLMUnitySamples
 
         protected GameObject CreateTextObject(Transform parent, string name, string message, bool horizontalStretch = true, bool verticalStretch = false)
         {
+            // Create a child GameObject for the text
             GameObject textObject = new GameObject(name, typeof(RectTransform), typeof(Text), typeof(Canvas));
             textObject.transform.SetParent(parent);
             Text textContent = textObject.GetComponent<Text>();
@@ -71,7 +72,7 @@ namespace LLMUnitySamples
                 if (verticalStretch) contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
                 if (horizontalStretch) contentSizeFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             }
-
+            // Add text and font
             textContent.text = message;
             if (bubbleUI.font != null)
                 textContent.font = bubbleUI.font;
@@ -95,22 +96,19 @@ namespace LLMUnitySamples
 
         void SetBubblePosition(RectTransform bubbleRectTransform, RectTransform imageRectTransform, BubbleUI bubbleUI)
         {
+            // Set the position of the new bubble at the bottom
             bubbleRectTransform.pivot = new Vector2(bubbleUI.leftPosition, bubbleUI.bottomPosition);
             bubbleRectTransform.anchorMin = new Vector2(bubbleUI.leftPosition, bubbleUI.bottomPosition);
             bubbleRectTransform.anchorMax = new Vector2(bubbleUI.leftPosition, bubbleUI.bottomPosition);
             bubbleRectTransform.localScale = Vector3.one;
-
             Vector2 anchoredPosition = new Vector2(bubbleUI.bubbleOffset + bubbleUI.textPadding, bubbleUI.bubbleOffset + bubbleUI.textPadding);
             if (bubbleUI.leftPosition == 1) anchoredPosition.x *= -1;
             if (bubbleUI.bottomPosition == 1) anchoredPosition.y *= -1;
-
             bubbleRectTransform.anchoredPosition = anchoredPosition;
 
             float width = bubbleUI.bubbleWidth == -1 ? bubbleRectTransform.sizeDelta.x : bubbleUI.bubbleWidth;
             float height = bubbleUI.bubbleHeight == -1 ? bubbleRectTransform.sizeDelta.y : bubbleUI.bubbleHeight;
-
             bubbleRectTransform.sizeDelta = new Vector2(width - 2 * bubbleUI.textPadding, height - 2 * bubbleUI.textPadding);
-
             SyncParentRectTransform(imageRectTransform);
             imageRectTransform.offsetMin = new Vector2(-bubbleUI.textPadding, -bubbleUI.textPadding);
             imageRectTransform.offsetMax = new Vector2(bubbleUI.textPadding, bubbleUI.textPadding);
@@ -118,10 +116,10 @@ namespace LLMUnitySamples
 
         void SetSortingOrder(GameObject bubbleObject, GameObject imageObject)
         {
+            // Set the sorting order to make bubbleObject render behind textObject
             Canvas bubbleCanvas = bubbleObject.GetComponent<Canvas>();
             bubbleCanvas.overrideSorting = true;
             bubbleCanvas.sortingOrder = 2;
-
             Canvas imageCanvas = imageObject.GetComponent<Canvas>();
             imageCanvas.overrideSorting = true;
             imageCanvas.sortingOrder = 1;
@@ -176,7 +174,6 @@ namespace LLMUnitySamples
             Text textObjext = bubbleObject.GetComponent<Text>();
             RectTransform bubbleRectTransform = bubbleObject.GetComponent<RectTransform>();
             bubbleObject.GetComponent<ContentSizeFitter>().enabled = false;
-
             placeholderObject = CreatePlaceholderObject(bubbleObject.transform, bubbleRectTransform, textObjext.text);
             inputFieldObject = CreateInputFieldObject(bubbleObject.transform, textObjext, placeholderObject.GetComponent<Text>());
             inputField = inputFieldObject.GetComponent<InputField>();
@@ -192,13 +189,12 @@ namespace LLMUnitySamples
 
         GameObject CreatePlaceholderObject(Transform parent, RectTransform textRectTransform, string message)
         {
+            // Create a child GameObject for the placeholder text
             GameObject placeholderObject = CreateTextObject(parent, "Placeholder", message, false, false);
             RectTransform placeholderRectTransform = placeholderObject.GetComponent<RectTransform>();
-
             placeholderRectTransform.sizeDelta = textRectTransform.sizeDelta;
             placeholderRectTransform.anchoredPosition = textRectTransform.anchoredPosition;
             placeholderRectTransform.localScale = Vector3.one;
-
             SyncParentRectTransform(placeholderRectTransform);
             return placeholderObject;
         }
@@ -207,21 +203,15 @@ namespace LLMUnitySamples
         {
             GameObject inputFieldObject = new GameObject("InputField", typeof(RectTransform), typeof(InputField), typeof(Canvas));
             inputFieldObject.transform.SetParent(parent);
-
             inputField = inputFieldObject.GetComponent<InputField>();
             inputField.textComponent = textObject;
             inputField.placeholder = placeholderTextObject;
             inputField.interactable = true;
-
-            // 🔥 CHANGE 1: Fix Enter key not submitting
-            inputField.lineType = InputField.LineType.SingleLine;
-
+            inputField.lineType = InputField.LineType.MultiLineSubmit;
             inputField.shouldHideMobileInput = false;
             inputField.shouldActivateOnSelect = true;
-
             RectTransform inputFieldRect = inputFieldObject.GetComponent<RectTransform>();
             inputFieldRect.localScale = Vector3.one;
-
             SyncParentRectTransform(inputFieldRect);
             return inputFieldObject;
         }
@@ -230,10 +220,21 @@ namespace LLMUnitySamples
         {
             GameObject caret = GameObject.Find($"{inputField.name} Input Caret");
 
-            // 🔥 CHANGE 2: Prevent crash
-            if (caret == null) return;
+            if (caret == null)
+            {
+                Debug.LogWarning("Caret not found yet");
+                return;
+            }
 
             Canvas bubbleCanvas = caret.GetComponent<Canvas>();
+
+            if (bubbleCanvas == null)
+            {
+                bubbleCanvas = caret.AddComponent<Canvas>();
+                bubbleCanvas.overrideSorting = true;
+                bubbleCanvas.sortingOrder = 3;
+            }
+            
             if (bubbleCanvas == null)
             {
                 bubbleCanvas = caret.AddComponent<Canvas>();
