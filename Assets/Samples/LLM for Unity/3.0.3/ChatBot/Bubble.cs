@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System;
 using LLMUnity;
+using System.Collections;
 
 namespace LLMUnitySamples
 {
@@ -294,14 +295,36 @@ namespace LLMUnitySamples
         public void ActivateInputField()
         {
             inputField.ActivateInputField();
-            FixCaretSorting();
-        }
+            inputField.StartCoroutine(FixCaretNextFrame());
+        }   
 
         public void ReActivateInputField()
         {
             inputField.DeactivateInputField();
             inputField.Select();
             inputField.ActivateInputField();
+        }
+
+        IEnumerator FixCaretNextFrame()
+        {
+            yield return null; // wait 1 frame
+
+            GameObject caret = GameObject.Find($"{inputField.name} Input Caret");
+
+            if (caret == null)
+            {
+                Debug.LogWarning("Caret still not found after delay");
+                yield break;
+            }
+
+            Canvas bubbleCanvas = caret.GetComponent<Canvas>();
+
+            if (bubbleCanvas == null)
+            {
+                bubbleCanvas = caret.AddComponent<Canvas>();
+                bubbleCanvas.overrideSorting = true;
+                bubbleCanvas.sortingOrder = 3;
+            }
         }
     }
 }
