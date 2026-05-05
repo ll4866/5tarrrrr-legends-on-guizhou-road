@@ -1,7 +1,6 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEngine.UI;
 using LLMUnity;
 
@@ -59,9 +58,8 @@ namespace LLMUnitySamples
 
             inputBubble = new InputBubble(chatContainer, playerUI, "InputBubble", "Loading...", 4);
 
-            // ✅ FIX: ENABLE UI SUBMIT (IMPORTANT FOR IPAD)
+            // ✅ Submit listener (works on iPad)
             inputBubble.AddSubmitListener(OnInputFieldSubmit);
-
             inputBubble.AddValueChangedListener(OnValueChanged);
             inputBubble.setInteractable(false);
 
@@ -79,20 +77,20 @@ namespace LLMUnitySamples
             bool enterPressed = Input.GetKeyDown(KeyCode.Return);
 #endif
 
-            // ✅ Desktop fallback ONLY
+            // ✅ Desktop only Enter fallback
 #if UNITY_STANDALONE || UNITY_EDITOR
             if (enterPressed && !blockInput && warmUpDone)
             {
                 OnInputFieldSubmit(inputBubble.GetText());
             }
-#endif
 
-            // keep focus
+            // ✅ Desktop only auto-focus
             if (!inputBubble.inputFocused() && warmUpDone)
             {
                 inputBubble.ActivateInputField();
                 StartCoroutine(BlockInteraction());
             }
+#endif
 
             // cleanup old bubbles
             if (lastBubbleOutsideFOV != -1)
@@ -110,11 +108,14 @@ namespace LLMUnitySamples
         {
             Debug.Log("Submit: " + newText);
 
-            inputBubble.ActivateInputField();
+            // ✅ IMPORTANT: close keyboard on iPad
+            #if ENABLE_INPUT_SYSTEM
+            TouchScreenKeyboard.hideInput = true;
+            #endif
+            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
 
             if (blockInput || !warmUpDone || string.IsNullOrWhiteSpace(newText))
             {
-                StartCoroutine(BlockInteraction());
                 return;
             }
 
@@ -128,7 +129,6 @@ namespace LLMUnitySamples
             llmAgent.Chat(message, aiBubble.SetText, AllowInput);
 
             inputBubble.SetText("");
-            inputBubble.ReActivateInputField();
         }
 
         Bubble AddBubble(string message, bool isPlayerMessage)
@@ -161,7 +161,11 @@ namespace LLMUnitySamples
         public void AllowInput()
         {
             blockInput = false;
+
+            // ✅ Only auto-focus on desktop
+#if UNITY_STANDALONE || UNITY_EDITOR
             inputBubble.ReActivateInputField();
+#endif
         }
 
         public void CancelRequests()
@@ -180,7 +184,7 @@ namespace LLMUnitySamples
 
         void OnValueChanged(string newText)
         {
-            // optional cleanup
+            // optional
         }
 
         public void UpdateBubblePositions()
