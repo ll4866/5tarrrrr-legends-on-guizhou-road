@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine.UI;
 using LLMUnity;
+
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -34,7 +35,8 @@ namespace LLMUnitySamples
 
         void Start()
         {
-            if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+                font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             playerUI = new BubbleUI
             {
@@ -57,8 +59,8 @@ namespace LLMUnitySamples
 
             inputBubble = new InputBubble(chatContainer, playerUI, "InputBubble", "Loading...", 4);
 
-            // ❌ IMPORTANT: disable Unity submit (prevents double trigger)
-            // inputBubble.AddSubmitListener(OnInputFieldSubmit);
+            // ✅ FIX: ENABLE UI SUBMIT (IMPORTANT FOR IPAD)
+            inputBubble.AddSubmitListener(OnInputFieldSubmit);
 
             inputBubble.AddValueChangedListener(OnValueChanged);
             inputBubble.setInteractable(false);
@@ -77,29 +79,13 @@ namespace LLMUnitySamples
             bool enterPressed = Input.GetKeyDown(KeyCode.Return);
 #endif
 
-            // 🔍 Debug logs
-            if (enterPressed)
+            // ✅ Desktop fallback ONLY
+#if UNITY_STANDALONE || UNITY_EDITOR
+            if (enterPressed && !blockInput && warmUpDone)
             {
-                Debug.Log("ENTER PRESSED");
-                Debug.Log("Input focused: " + inputBubble.inputFocused());
-                Debug.Log("blockInput: " + blockInput);
-                Debug.Log("warmUpDone: " + warmUpDone);
-                Debug.Log("Current text: [" + inputBubble.GetText() + "]");
+                OnInputFieldSubmit(inputBubble.GetText());
             }
-
-            // ✅ SEND MESSAGE ON ENTER
-            if (enterPressed)
-            {
-                if (!blockInput && warmUpDone)
-                {
-                    Debug.Log("SENDING MESSAGE...");
-                    OnInputFieldSubmit(inputBubble.GetText());
-                }
-                else
-                {
-                    Debug.Log("BLOCKED: blockInput or warmUp not ready");
-                }
-            }
+#endif
 
             // keep focus
             if (!inputBubble.inputFocused() && warmUpDone)
@@ -122,38 +108,37 @@ namespace LLMUnitySamples
 
         void OnInputFieldSubmit(string newText)
         {
-            Debug.Log("OnInputFieldSubmit CALLED with: [" + newText + "]");
+            Debug.Log("Submit: " + newText);
 
             inputBubble.ActivateInputField();
 
-            if (blockInput || newText.Trim() == "")
+            if (blockInput || !warmUpDone || string.IsNullOrWhiteSpace(newText))
             {
-                Debug.Log("Submit BLOCKED inside function");
                 StartCoroutine(BlockInteraction());
                 return;
             }
 
-            Debug.Log("Submit PASSED, sending to LLM");
-
             blockInput = true;
 
-            // remove unwanted newline
-            string message = inputBubble.GetText().Replace("\n", "").Replace("\v", "\n");
+            string message = newText.Replace("\n", "");
 
             AddBubble(message, true);
             Bubble aiBubble = AddBubble("...", false);
 
-            Task chatTask = llmAgent.Chat(message, aiBubble.SetText, AllowInput);
+            llmAgent.Chat(message, aiBubble.SetText, AllowInput);
 
             inputBubble.SetText("");
+            inputBubble.ReActivateInputField();
         }
 
         Bubble AddBubble(string message, bool isPlayerMessage)
         {
-            Bubble bubble = new Bubble(chatContainer,
+            Bubble bubble = new Bubble(
+                chatContainer,
                 isPlayerMessage ? playerUI : aiUI,
                 isPlayerMessage ? "PlayerBubble" : "AIBubble",
-                message);
+                message
+            );
 
             chatBubbles.Add(bubble);
             bubble.OnResize(UpdateBubblePositions);
@@ -195,17 +180,7 @@ namespace LLMUnitySamples
 
         void OnValueChanged(string newText)
         {
-#if ENABLE_INPUT_SYSTEM
-            bool enterPressed = Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame;
-#else
-            bool enterPressed = Input.GetKey(KeyCode.Return);
-#endif
-
-            if (enterPressed)
-            {
-                if (inputBubble.GetText().Trim() == "")
-                    inputBubble.SetText("");
-            }
+            // optional cleanup
         }
 
         public void UpdateBubblePositions()
@@ -233,17 +208,6 @@ namespace LLMUnitySamples
         {
             Debug.Log("Exit button clicked");
             Application.Quit();
-        }
-
-        bool onValidateWarning = true;
-
-        void OnValidate()
-        {
-            if (onValidateWarning && !llmAgent.remote && llmAgent.llm != null && llmAgent.llm.model == "")
-            {
-                Debug.LogWarning($"Please select a model in the {llmAgent.llm.gameObject.name} GameObject!");
-                onValidateWarning = false;
-            }
         }
     }
 }
