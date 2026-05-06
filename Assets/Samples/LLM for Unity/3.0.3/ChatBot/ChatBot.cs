@@ -1,7 +1,9 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using LLMUnity;
 
 #if ENABLE_INPUT_SYSTEM
@@ -28,7 +30,6 @@ namespace LLMUnitySamples
         private InputBubble inputBubble;
         private List<Bubble> chatBubbles = new List<Bubble>();
         private bool blockInput = true;
-        private BubbleUI playerUI, aiUI;
         private bool warmUpDone = false;
         private int lastBubbleOutsideFOV = -1;
 
@@ -37,7 +38,7 @@ namespace LLMUnitySamples
             if (font == null)
                 font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            playerUI = new BubbleUI
+            var playerUI = new BubbleUI
             {
                 sprite = sprite,
                 font = font,
@@ -52,76 +53,64 @@ namespace LLMUnitySamples
                 bubbleHeight = -1
             };
 
-            aiUI = playerUI;
+            var aiUI = playerUI;
             aiUI.bubbleColor = aiColor;
             aiUI.leftPosition = 1;
 
             inputBubble = new InputBubble(chatContainer, playerUI, "InputBubble", "Loading...", 4);
 
-            // ✅ Submit listener (works on iPad)
             inputBubble.AddSubmitListener(OnInputFieldSubmit);
             inputBubble.AddValueChangedListener(OnValueChanged);
-            inputBubble.setInteractable(false);
+
+            inputBubble.setInteractable(true);
 
             stopButton.gameObject.SetActive(true);
 
             ShowLoadedMessages();
             _ = llmAgent.Warmup(WarmUpCallback);
+
+            StartCoroutine(FocusNextFrame());
         }
 
         void Update()
         {
+            // ===== UNIVERSAL ENTER (Mac + iPad + Editor) =====
 #if ENABLE_INPUT_SYSTEM
-            bool enterPressed = Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame;
+            bool enterPressed =
+                Keyboard.current != null &&
+                Keyboard.current.enterKey.wasPressedThisFrame;
 #else
-            bool enterPressed = Input.GetKeyDown(KeyCode.Return);
+    bool enterPressed = Input.GetKeyDown(KeyCode.Return);
 #endif
 
-            // ✅ Desktop only Enter fallback
-#if UNITY_STANDALONE || UNITY_EDITOR
             if (enterPressed && !blockInput && warmUpDone)
             {
-                OnInputFieldSubmit(inputBubble.GetText());
+                SendMessage();
             }
 
-            // ✅ Desktop only auto-focus
-            if (!inputBubble.inputFocused() && warmUpDone)
-            {
-                inputBubble.ActivateInputField();
-                StartCoroutine(BlockInteraction());
-            }
-#endif
+            CleanupBubbles();
+        }
 
-            // cleanup old bubbles
-            if (lastBubbleOutsideFOV != -1)
-            {
-                for (int i = 0; i <= lastBubbleOutsideFOV; i++)
-                {
-                    chatBubbles[i].Destroy();
-                }
-                chatBubbles.RemoveRange(0, lastBubbleOutsideFOV + 1);
-                lastBubbleOutsideFOV = -1;
-            }
+        void SendMessage()
+        {
+            string text = inputBubble.GetText();
+            OnInputFieldSubmit(text);
         }
 
         void OnInputFieldSubmit(string newText)
         {
-            Debug.Log("Submit: " + newText);
-
-            // ✅ IMPORTANT: close keyboard on iPad
-            #if ENABLE_INPUT_SYSTEM
-            TouchScreenKeyboard.hideInput = true;
-            #endif
-            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
-
-            if (blockInput || !warmUpDone || string.IsNullOrWhiteSpace(newText))
-            {
+            if (blockInput || !warmUpDone)
                 return;
-            }
+
+            if (string.IsNullOrWhiteSpace(newText))
+                return;
 
             blockInput = true;
 
             string message = newText.Replace("\n", "");
+
+            // 🔥 release keyboard / focus (iPad + editor safe)
+            EventSystem.current.SetSelectedGameObject(null);
 
             AddBubble(message, true);
             Bubble aiBubble = AddBubble("...", false);
@@ -129,26 +118,20 @@ namespace LLMUnitySamples
             llmAgent.Chat(message, aiBubble.SetText, AllowInput);
 
             inputBubble.SetText("");
+
+            StartCoroutine(FocusNextFrame());
         }
 
-        Bubble AddBubble(string message, bool isPlayerMessage)
+        IEnumerator FocusNextFrame()
         {
-            Bubble bubble = new Bubble(
-                chatContainer,
-                isPlayerMessage ? playerUI : aiUI,
-                isPlayerMessage ? "PlayerBubble" : "AIBubble",
-                message
-            );
-
-            chatBubbles.Add(bubble);
-            bubble.OnResize(UpdateBubblePositions);
-            return bubble;
+            yield return null;
+            inputBubble.ActivateInputField();
         }
 
-        void ShowLoadedMessages()
+        public void AllowInput()
         {
-            for (int i = 1; i < llmAgent.chat.Count; i++)
-                AddBubble(llmAgent.chat[i].content, i % 2 == 1);
+            blockInput = false;
+            StartCoroutine(FocusNextFrame());
         }
 
         public void WarmUpCallback()
@@ -158,33 +141,64 @@ namespace LLMUnitySamples
             AllowInput();
         }
 
-        public void AllowInput()
-        {
-            blockInput = false;
+        void OnValueChanged(string text) { }
 
-            // ✅ Only auto-focus on desktop
-#if UNITY_STANDALONE || UNITY_EDITOR
-            inputBubble.ReActivateInputField();
-#endif
+        Bubble AddBubble(string message, bool isPlayer)
+        {
+            Bubble bubble = new Bubble(
+                chatContainer,
+                isPlayer ? CreatePlayerUI() : CreateAIUI(),
+                isPlayer ? "PlayerBubble" : "AIBubble",
+                message
+            );
+
+            chatBubbles.Add(bubble);
+            bubble.OnResize(UpdateBubblePositions);
+            return bubble;
         }
 
-        public void CancelRequests()
+        BubbleUI CreatePlayerUI()
         {
-            llmAgent.CancelRequests();
-            AllowInput();
+            return new BubbleUI
+            {
+                sprite = sprite,
+                font = font,
+                fontSize = fontSize,
+                fontColor = fontColor,
+                bubbleColor = playerColor,
+                bottomPosition = 0,
+                leftPosition = 0,
+                textPadding = textPadding,
+                bubbleOffset = bubbleSpacing,
+                bubbleWidth = bubbleWidth,
+                bubbleHeight = -1
+            };
         }
 
-        IEnumerator BlockInteraction()
+        BubbleUI CreateAIUI()
         {
-            inputBubble.setInteractable(false);
-            yield return null;
-            inputBubble.setInteractable(true);
-            inputBubble.MoveTextEnd();
+            var ui = CreatePlayerUI();
+            ui.bubbleColor = aiColor;
+            ui.leftPosition = 1;
+            return ui;
         }
 
-        void OnValueChanged(string newText)
+        void ShowLoadedMessages()
         {
-            // optional
+            for (int i = 1; i < llmAgent.chat.Count; i++)
+                AddBubble(llmAgent.chat[i].content, i % 2 == 1);
+        }
+
+        void CleanupBubbles()
+        {
+            if (lastBubbleOutsideFOV != -1)
+            {
+                for (int i = 0; i <= lastBubbleOutsideFOV; i++)
+                    chatBubbles[i].Destroy();
+
+                chatBubbles.RemoveRange(0, lastBubbleOutsideFOV + 1);
+                lastBubbleOutsideFOV = -1;
+            }
         }
 
         public void UpdateBubblePositions()
@@ -194,15 +208,13 @@ namespace LLMUnitySamples
 
             for (int i = chatBubbles.Count - 1; i >= 0; i--)
             {
-                Bubble bubble = chatBubbles[i];
-                RectTransform childRect = bubble.GetRectTransform();
+                var bubble = chatBubbles[i];
+                RectTransform rt = bubble.GetRectTransform();
 
-                childRect.anchoredPosition = new Vector2(childRect.anchoredPosition.x, y);
+                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, y);
 
                 if (y > containerHeight && lastBubbleOutsideFOV == -1)
-                {
                     lastBubbleOutsideFOV = i;
-                }
 
                 y += bubble.GetSize().y + bubbleSpacing;
             }
@@ -210,7 +222,6 @@ namespace LLMUnitySamples
 
         public void ExitGame()
         {
-            Debug.Log("Exit button clicked");
             Application.Quit();
         }
     }
