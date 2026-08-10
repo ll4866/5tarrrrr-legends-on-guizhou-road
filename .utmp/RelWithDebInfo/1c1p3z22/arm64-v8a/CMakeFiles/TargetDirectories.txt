@@ -1,0 +1,5 @@
+/Users/lucaslin1428/Desktop/5tarrrrr-legends-on-guizhou-road/.utmp/RelWithDebInfo/1c1p3z22/arm64-v8a/CMakeFiles/edit_cache.dir
+/Users/lucaslin1428/Desktop/5tarrrrr-legends-on-guizhou-road/.utmp/RelWithDebInfo/1c1p3z22/arm64-v8a/CMakeFiles/rebuild_cache.dir
+/Users/lucaslin1428/Desktop/5tarrrrr-legends-on-guizhou-road/.utmp/RelWithDebInfo/1c1p3z22/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
+/Users/lucaslin1428/Desktop/5tarrrrr-legends-on-guizhou-road/.utmp/RelWithDebInfo/1c1p3z22/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
+/Users/lucaslin1428/Desktop/5tarrrrr-legends-on-guizhou-road/.utmp/RelWithDebInfo/1c1p3z22/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir
